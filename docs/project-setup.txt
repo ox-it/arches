@@ -8,6 +8,32 @@ $ source env/bin/activate
 (env)$ arches-project create mynewproject
 (env)$ cd mynewproject
 
+#Your new projects folder structure
+
+```mynewproject/
+    manage.py
+    mynewproject/
+        datatypes/
+        functions/
+            templates/
+        templates/
+        media/
+            bower_components/
+            css/
+            img/
+            js/
+                views/
+                    components/
+                        functions/
+                        widgets/
+        widgets/
+            templates/
+        settings.py
+        urls.py
+        wsgi.py
+        bower.json
+        .bowerrc```
+
 In your settings use the default arches settings for your database and elasticsearch ports.
 If you want to run more that one project on a machine, you will have to modify these to avoid conflicts
 
