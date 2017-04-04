@@ -53,7 +53,7 @@ define(['jquery',
                         },
                         buffer: {
                             width: ko.observable('0'),
-                            unit: ko.observable('ft')
+                            unit: ko.observable('m')
                         },
                         inverted: ko.observable(false)
                     },
@@ -89,16 +89,13 @@ define(['jquery',
                         }, 500);
                     }
                 }).layer();
-
-                this.drawingFeatures = new ol.Collection()
-
-                this.drawingFeatureSource = new ol.source.Vector({
-                    features: this.drawingFeatures
+                this.map = new MapView({
+                    el: $('#map'),
+                    overlays: [this.vectorLayer]
                 });
-                this.bufferFeatureSource = new ol.source.Vector();
 
-                this.bufferFeatureOverlay = new ol.layer.Vector({
-                    source: this.bufferFeatureSource,
+
+                this.bufferFeatureOverlay = new ol.FeatureOverlay({
                     style: new ol.style.Style({
                         fill: new ol.style.Fill({
                             color: 'rgba(123, 123, 255, 0.5)'
@@ -109,11 +106,10 @@ define(['jquery',
                             lineDash: [4,4]
                         })
                     })
-                });
-                // this.bufferFeatureSource.setMap(this.map.map);
-
-                this.drawingFeatureOverlay = new ol.layer.Vector({
-                    source: this.drawingFeatureSource,
+                }); 
+                this.bufferFeatureOverlay.setMap(this.map.map);                   
+                
+                this.drawingFeatureOverlay = new ol.FeatureOverlay({
                     style: new ol.style.Style({
                         fill: new ol.style.Fill({
                             color: 'rgba(255, 255, 255, 0.2)'
@@ -124,16 +120,8 @@ define(['jquery',
                         })
                     })
                 });
-                // this.drawingFeatureSource.setMap(this.map.map);
-
-
-                this.map = new MapView({
-                    el: $('#map'),
-                    overlays: [this.bufferFeatureOverlay, this.drawingFeatureOverlay, this.vectorLayer]
-                });
-
-
-
+                this.drawingFeatureOverlay.setMap(this.map.map);
+                
                 ko.applyBindings(this.map, $('#basemaps-panel')[0]);
 
                 var hideAllPanels = function(){
@@ -533,7 +521,7 @@ define(['jquery',
                         self.currentPageLayer.getSource().addFeatures(currentPageFeatures);
                         self.resultLayer.vectorSource.addFeatures(resultFeatures);
                         self.vectorLayer.vectorSource.addFeatures(nonResultFeatures);
-                        if (self.drawingFeatureSource.getFeatures().length === 0 && this.query.filter.geometry.type() !== 'bbox') {
+                        if (self.drawingFeatureOverlay.getFeatures().getLength() === 0 && this.query.filter.geometry.type() !== 'bbox') {
                             self.zoomToResults();
                         }
                     }
@@ -608,7 +596,7 @@ define(['jquery',
                 this.disableDrawingTools();
 
                 this.modifyTool = new ol.interaction.Modify({
-                    features: this.drawingFeatures,
+                    features: this.drawingFeatureOverlay.getFeatures(),
                     // the SHIFT key must be pressed to delete vertices, so
                     // that new vertices can be drawn at the same position
                     // of existing vertices
@@ -620,7 +608,7 @@ define(['jquery',
                 map.addInteraction(this.modifyTool);
 
                 this.drawingtool = new ol.interaction.Draw({
-                    features: this.drawingFeatures,
+                    features: this.drawingFeatureOverlay.getFeatures(),
                     type: tooltype
                 });
                 this.drawingtool.set('type', tooltype);
@@ -634,7 +622,6 @@ define(['jquery',
                 this.drawingtool.on('drawend', function(evt){
                     var self = this;
                     var geometry = evt.feature.getGeometry().clone();
-                    this.drawingFeatureSource.addFeature(evt.feature);
                     geometry.transform('EPSG:3857', 'EPSG:4326');
                     this.query.filter.geometry.coordinates(geometry.getCoordinates());
 
@@ -669,11 +656,11 @@ define(['jquery',
             },
 
             clearDrawingFeatures: function(){
-                if (this.bufferFeatureSource){
-                    this.bufferFeatureSource.clear();
+                if (this.bufferFeatureOverlay){
+                    this.bufferFeatureOverlay.getFeatures().clear();                 
                 }
-                if (this.drawingFeatureSource){
-                    this.drawingFeatureSource.clear();
+                if (this.drawingFeatureOverlay){
+                    this.drawingFeatureOverlay.getFeatures().clear();
                 }
             },
 
@@ -681,8 +668,8 @@ define(['jquery',
                 var self = this;
                 var params = {
                     filter: ko.toJSON(this.query.filter)
-                };
-                if(this.query.filter.buffer.width() > 0 && this.drawingFeatureSource.getFeatures().length > 0){
+                }; 
+                if(this.query.filter.buffer.width() > 0 && this.drawingFeatureOverlay.getFeatures().getLength() > 0){
                     $.ajax({
                         type: "GET",
                         url: arches.urls.buffer,
@@ -694,13 +681,13 @@ define(['jquery',
                             var feature = source.getFeatures()[0];
 
                             feature.getGeometry().transform('EPSG:4326', 'EPSG:3857');
-                            self.bufferFeatureSource.clear();
-                            self.bufferFeatureSource.addFeature(feature);
+                            self.bufferFeatureOverlay.getFeatures().clear();  
+                            self.bufferFeatureOverlay.addFeature(feature);
                         },
                         error: function(){}
                     });
                 }else{
-                    this.bufferFeatureSource.clear();
+                    this.bufferFeatureOverlay.getFeatures().clear();  
                 }
             },
 
@@ -766,7 +753,7 @@ define(['jquery',
 
                             feature.getGeometry().transform('EPSG:4326', 'EPSG:3857');
                             this.zoomToExtent(feature.getGeometry().getExtent());
-                            this.drawingFeatureSource.addFeature(feature);
+                            this.drawingFeatureOverlay.addFeature(feature);
                             this.changeDrawingTool(this.map.map, type);
                             this.disableDrawingTools();
 

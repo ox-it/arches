@@ -77,12 +77,11 @@ def build_search_terms_dsl(request):
     boolquery.should(Match(field='term.folded', query=searchString.lower(), type='phrase_prefix', fuzziness='AUTO'))
     boolquery.should(Match(field='term.folded', query=searchString.lower(), fuzziness='AUTO'))
     query.add_query(boolquery)
-
     return query
 
 def search_results(request):
     dsl = build_search_results_dsl(request)
-    results = dsl.search(index='entity', doc_type='') 
+    results = dsl.search(index='entity', doc_type='')
     total = results['hits']['total']
     page = 1 if request.GET.get('page') == '' else int(request.GET.get('page', 1))
     all_entity_ids = ['_all']
@@ -91,16 +90,27 @@ def search_results(request):
     elif request.GET.get('no_filters', '') == '':
         full_results = dsl.search(index='entity', doc_type='', start=0, limit=1000000, fields=[])
         all_entity_ids = [hit['_id'] for hit in full_results['hits']['hits']]
-
     return get_paginator(results, total, page, settings.SEARCH_ITEMS_PER_PAGE, all_entity_ids)
 
 def build_search_results_dsl(request):
+#    Results are sorted ascendingly by the value of SITE_ID.E42, which is displayed as primary name of Heritage Resources. 
+#    Must go back to this method once new Automatic Resource ID has been fully developed (AZ 10/08/16) Update 06/09/16: EAMENA_ID.E42 now used as sorting criterion.
+    sorting = {
+		"child_entities.label":  {
+			"order" : "asc",
+			"nested_path": "child_entities",
+			"nested_filter": {
+				"term": {"child_entities.entitytypeid" : "EAMENA_ID.E42"}
+			}			
+		}
+	}
+    
     term_filter = request.GET.get('termFilter', '')
     spatial_filter = JSONDeserializer().deserialize(request.GET.get('spatialFilter', None)) 
     export = request.GET.get('export', None)
     page = 1 if request.GET.get('page') == '' else int(request.GET.get('page', 1))
     temporal_filter = JSONDeserializer().deserialize(request.GET.get('temporalFilter', None))
-
+    
     se = SearchEngineFactory().create()
 
     if export != None:
@@ -111,10 +121,10 @@ def build_search_results_dsl(request):
     query = Query(se, start=limit*int(page-1), limit=limit)
     boolquery = Bool()
     boolfilter = Bool()
-    
     if term_filter != '':
         for term in JSONDeserializer().deserialize(term_filter):
             if term['type'] == 'term':
+
                 entitytype = models.EntityTypes.objects.get(conceptid_id=term['context'])
                 boolfilter_nested = Bool()
                 boolfilter_nested.must(Terms(field='child_entities.entitytypeid', terms=[entitytype.pk]))
@@ -125,6 +135,7 @@ def build_search_results_dsl(request):
                 else:    
                     boolfilter.must(nested)
             elif term['type'] == 'concept':
+
                 concept_ids = _get_child_concepts(term['value'])
                 terms = Terms(field='domains.conceptid', terms=concept_ids)
                 nested = Nested(path='domains', query=terms)
@@ -133,14 +144,22 @@ def build_search_results_dsl(request):
                 else:
                     boolfilter.must(nested)
             elif term['type'] == 'string':
-                boolfilter_folded = Bool()
+                boolquery2 = Bool() #This bool contains the subset of nested string queries on both domains and child_entities paths
+                boolfilter_folded = Bool() #This bool searches by string in child_entities, where free text strings get indexed
+                boolfilter_folded2 = Bool() #This bool searches by string in the domains path,where controlled vocabulary concepts get indexed
                 boolfilter_folded.should(Match(field='child_entities.value', query=term['value'], type='phrase_prefix'))
                 boolfilter_folded.should(Match(field='child_entities.value.folded', query=term['value'], type='phrase_prefix'))
                 nested = Nested(path='child_entities', query=boolfilter_folded)
+                boolfilter_folded2.should(Match(field='domains.label', query=term['value'], type='phrase_prefix'))
+                boolfilter_folded2.should(Match(field='domains.label.folded', query=term['value'], type='phrase_prefix'))
+                nested2 = Nested(path='domains', query=boolfilter_folded2)
+                boolquery2.should(nested)
+                boolquery2.should(nested2)
                 if term['inverted']:
-                    boolquery.must_not(nested)
+                    boolquery.must_not(boolquery2)
                 else:    
-                    boolquery.must(nested)
+                    boolquery.must(boolquery2)
+                    
 
     if 'geometry' in spatial_filter and 'type' in spatial_filter['geometry'] and spatial_filter['geometry']['type'] != '':
         geojson = spatial_filter['geometry']
@@ -185,6 +204,9 @@ def build_search_results_dsl(request):
 
     if not boolfilter.empty:
         query.add_filter(boolfilter)
+    
+#  Sorting criterion added to query (AZ 10/08/16)
+    query.dsl.update({'sort': sorting})
 
     return query
 
@@ -207,7 +229,8 @@ def _buffer(geojson, width=0, unit='ft'):
     if width > 0:
         geom = GEOSGeometry(geojson, srid=4326)
         geom.transform(3857)
-
+        
+# Below 2 lines are deprecated in EAMENA's Arches as the unit of choice is EPSG3857's default metres
         if unit == 'ft':
             width = width/3.28084
 
@@ -251,7 +274,7 @@ def export_results(request):
     format = request.GET.get('export', 'csv')
     exporter = ResourceExporter(format)
     results = exporter.export(search_results['hits']['hits'])
-
+    
     related_resources = [{'id1':rr.entityid1, 'id2':rr.entityid2, 'type':rr.relationshiptype} for rr in models.RelatedResource.objects.all()] 
     csv_name = 'resource_relationships.csv'
     dest = StringIO()

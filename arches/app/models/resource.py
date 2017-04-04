@@ -30,6 +30,7 @@ from django.utils.translation import ugettext as _
 from django.forms.models import model_to_dict
 from django.contrib.gis.geos import GEOSGeometry
 
+
 class Resource(Entity):
     """ 
     Used for managing Resource type entities
@@ -283,6 +284,7 @@ class Resource(Entity):
         pass
 
     def bulk_index(self, resources=[]):
+
         report_documents = []
         search_documents = []
         geojson_documents = []
@@ -396,7 +398,7 @@ class Resource(Entity):
         def gather_entities(entity):
             if entity.businesstablename == '':
                 pass
-            elif entity.businesstablename == 'strings':
+            elif entity.businesstablename == 'strings' or entity.businesstablename =='uniqueids':
                 if settings.WORDS_PER_SEARCH_TERM == None or (len(entity.value.split(' ')) < settings.WORDS_PER_SEARCH_TERM):
                     entitytype = archesmodels.EntityTypes.objects.get(pk=entity.entitytypeid)
                     terms.append({'term': entity.value, 'entityid': entity.entityid, 'context': entitytype.conceptid_id, 'options': {}})
